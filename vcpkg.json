@@ -1,0 +1,11 @@
+{
+  "name": "ds4sniffer",
+  "version": "1.0.0",
+  "description": "To be filled",
+  "license": "MIT",
+  "supports": "!(arm | uwp)",
+  "dependencies": [
+    "spdlog",
+	"detours"
+  ]
+}
