@@ -2,12 +2,18 @@
 
 #include <codecvt>
 #include <locale>
+#include <map>
 
 using convert_t = std::codecvt_utf8<wchar_t>;
 std::wstring_convert<convert_t, wchar_t> strconverter;
 
+static std::map<HANDLE, std::string> g_handleToPath;
+
 static decltype(CreateFileA)* real_CreateFileA = CreateFileA;
 static decltype(CreateFileW)* real_CreateFileW = CreateFileW;
+static decltype(WriteFile)* real_WriteFile = WriteFile;
+static decltype(CloseHandle)* real_CloseHandle = CloseHandle;
+
 
 //
 // Hooks CreateFileA() API
@@ -42,6 +48,7 @@ HANDLE WINAPI DetourCreateFileA(
 
 	if (handle != INVALID_HANDLE_VALUE)
 	{
+		g_handleToPath[handle] = path;
 		if (isOfInterest)
 			_logger->info("handle = {}, lpFileName = {}", handle, path);
 	}
@@ -82,12 +89,68 @@ HANDLE WINAPI DetourCreateFileW(
 
 	if (handle != INVALID_HANDLE_VALUE)
 	{
+		g_handleToPath[handle] = path;
 		if (isOfInterest)
 			_logger->info("handle = {}, lpFileName = {}", handle, path);
 	}
 
 	return handle;
 }
+
+//
+// Hooks WriteFile() API
+// 
+BOOL WINAPI DetourWriteFile(
+	HANDLE       hFile,
+	LPCVOID      lpBuffer,
+	DWORD        nNumberOfBytesToWrite,
+	LPDWORD      lpNumberOfBytesWritten,
+	LPOVERLAPPED lpOverlapped
+)
+{
+	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("WriteFile");
+
+	const PUCHAR charInBuf = PUCHAR(lpBuffer);
+	const std::vector<char> inBuffer(charInBuf, charInBuf + nNumberOfBytesToWrite);
+
+	const auto ret = real_WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, lpOverlapped);
+	const auto error = GetLastError();
+
+	//
+	// Only log if handle of interest
+	// 
+	if (g_handleToPath.find(hFile) != g_handleToPath.end())
+	{
+		_logger->info("ret={}, lastError={} ({:04d}) -> {:Xpn}",
+			ret,
+			error,
+			nNumberOfBytesToWrite,
+			spdlog::to_hex(inBuffer)
+		);
+	}
+
+	return ret;
+}
+
+//
+// Hooks CloseHandle() API
+// 
+BOOL WINAPI DetourCloseHandle(
+	HANDLE hObject
+)
+{
+	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("CloseHandle");
+
+	const auto it = g_handleToPath.find(hObject);
+
+	if (it != g_handleToPath.end())
+	{
+		g_handleToPath.erase(it);
+	}
+
+	return real_CloseHandle(hObject);
+}
+
 
 BOOL APIENTRY DllMain(HMODULE hModule,
 	DWORD  ul_reason_for_call,
@@ -134,6 +197,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 		DetourUpdateThread(GetCurrentThread());
 		DetourAttach((void**)&real_CreateFileA, DetourCreateFileA);
 		DetourAttach((void**)&real_CreateFileW, DetourCreateFileW);
+		DetourAttach((void**)&real_CloseHandle, DetourCloseHandle);
 		DetourTransactionCommit();
 
 		break;
@@ -146,6 +210,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 		DetourUpdateThread(GetCurrentThread());
 		DetourDetach((void**)&real_CreateFileA, DetourCreateFileA);
 		DetourDetach((void**)&real_CreateFileW, DetourCreateFileW);
+		DetourDetach((void**)&real_CloseHandle, DetourCloseHandle);
 		DetourTransactionCommit();
 
 		break;
