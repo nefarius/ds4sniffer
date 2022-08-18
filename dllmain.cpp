@@ -36,7 +36,9 @@ HANDLE WINAPI DetourCreateFileA(
 	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("CreateFileA");
 	std::string path(lpFileName);
 
-	const bool isOfInterest = (path.rfind(g_match, 0) == 0);
+	std::transform(path.begin(), path.end(), path.begin(), ::toupper);
+
+	const bool isOfInterest = (path.find(g_match, 0) != std::string::npos);
 
 	if (isOfInterest)
 		_logger->info("lpFileName = {}", path);
@@ -79,7 +81,9 @@ HANDLE WINAPI DetourCreateFileW(
 	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("CreateFileW");
 	std::string path(strconverter.to_bytes(lpFileName));
 
-	const bool isOfInterest = (path.rfind(g_match, 0) == 0);
+	std::transform(path.begin(), path.end(), path.begin(), ::toupper);
+
+	const bool isOfInterest = (path.find(g_match, 0) != std::string::npos);
 
 	if (isOfInterest)
 		_logger->info("lpFileName = {}", path);
@@ -154,6 +158,7 @@ BOOL WINAPI DetourCloseHandle(
 
 	if (it != g_handleToPath.end())
 	{
+		_logger->info("Closing tracked handle");
 		g_handleToPath.erase(it);
 	}
 
@@ -274,6 +279,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 		DetourUpdateThread(GetCurrentThread());
 		DetourAttach((void**)&real_CreateFileA, DetourCreateFileA);
 		DetourAttach((void**)&real_CreateFileW, DetourCreateFileW);
+		DetourAttach((void**)&real_WriteFile, DetourWriteFile);
 		DetourAttach((void**)&real_CloseHandle, DetourCloseHandle);
 		DetourAttach((void**)&real_HidD_SetFeature, DetourHidD_SetFeature);
 		DetourAttach((void**)&real_HidD_SetOutputReport, DetourHidD_SetOutputReport);
@@ -289,6 +295,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 		DetourUpdateThread(GetCurrentThread());
 		DetourDetach((void**)&real_CreateFileA, DetourCreateFileA);
 		DetourDetach((void**)&real_CreateFileW, DetourCreateFileW);
+		DetourDetach((void**)&real_WriteFile, DetourWriteFile);
 		DetourDetach((void**)&real_CloseHandle, DetourCloseHandle);
 		DetourDetach((void**)&real_HidD_SetFeature, DetourHidD_SetFeature);
 		DetourDetach((void**)&real_HidD_SetOutputReport, DetourHidD_SetOutputReport);
