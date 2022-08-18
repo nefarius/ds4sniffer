@@ -1,9 +1,12 @@
 #include "framework.h"
 
+#pragma comment(lib, "hid.lib")
+
 #include <codecvt>
 #include <locale>
 #include <map>
 
+std::string g_match("054C_PID");
 using convert_t = std::codecvt_utf8<wchar_t>;
 std::wstring_convert<convert_t, wchar_t> strconverter;
 
@@ -13,6 +16,8 @@ static decltype(CreateFileA)* real_CreateFileA = CreateFileA;
 static decltype(CreateFileW)* real_CreateFileW = CreateFileW;
 static decltype(WriteFile)* real_WriteFile = WriteFile;
 static decltype(CloseHandle)* real_CloseHandle = CloseHandle;
+static decltype(HidD_SetFeature)* real_HidD_SetFeature = HidD_SetFeature;
+static decltype(HidD_SetOutputReport)* real_HidD_SetOutputReport = HidD_SetOutputReport;
 
 
 //
@@ -31,7 +36,7 @@ HANDLE WINAPI DetourCreateFileA(
 	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("CreateFileA");
 	std::string path(lpFileName);
 
-	const bool isOfInterest = (path.rfind("\\\\", 0) == 0);
+	const bool isOfInterest = (path.rfind(g_match, 0) == 0);
 
 	if (isOfInterest)
 		_logger->info("lpFileName = {}", path);
@@ -48,9 +53,11 @@ HANDLE WINAPI DetourCreateFileA(
 
 	if (handle != INVALID_HANDLE_VALUE)
 	{
-		g_handleToPath[handle] = path;
 		if (isOfInterest)
+		{
+			g_handleToPath[handle] = path;
 			_logger->info("handle = {}, lpFileName = {}", handle, path);
+		}
 	}
 
 	return handle;
@@ -72,7 +79,7 @@ HANDLE WINAPI DetourCreateFileW(
 	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("CreateFileW");
 	std::string path(strconverter.to_bytes(lpFileName));
 
-	const bool isOfInterest = (path.rfind("\\\\", 0) == 0);
+	const bool isOfInterest = (path.rfind(g_match, 0) == 0);
 
 	if (isOfInterest)
 		_logger->info("lpFileName = {}", path);
@@ -89,9 +96,11 @@ HANDLE WINAPI DetourCreateFileW(
 
 	if (handle != INVALID_HANDLE_VALUE)
 	{
-		g_handleToPath[handle] = path;
 		if (isOfInterest)
+		{
+			g_handleToPath[handle] = path;
 			_logger->info("handle = {}, lpFileName = {}", handle, path);
+		}
 	}
 
 	return handle;
@@ -151,12 +160,80 @@ BOOL WINAPI DetourCloseHandle(
 	return real_CloseHandle(hObject);
 }
 
+//
+// Hooks HidD_SetFeature() API
+// 
+BOOLEAN DetourHidD_SetFeature(
+	HANDLE HidDeviceObject,
+	PVOID  ReportBuffer,
+	ULONG  ReportBufferLength
+)
+{
+	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("HidD_SetFeature");
+
+	const PUCHAR charInBuf = PUCHAR(ReportBuffer);
+	const std::vector<char> inBuffer(charInBuf, charInBuf + ReportBufferLength);
+
+	const auto ret = real_HidD_SetFeature(HidDeviceObject, ReportBuffer, ReportBufferLength);
+	const auto error = GetLastError();
+
+	//
+	// Only log if handle of interest
+	// 
+	if (g_handleToPath.find(HidDeviceObject) != g_handleToPath.end())
+	{
+		_logger->info("ret={}, lastError={} ({:04d}) -> {:Xpn}",
+			ret,
+			error,
+			ReportBufferLength,
+			spdlog::to_hex(inBuffer)
+		);
+	}
+
+	return ret;
+}
+
+//
+// Hooks HidD_SetOutputReport() API
+// 
+BOOLEAN DetourHidD_SetOutputReport(
+	HANDLE HidDeviceObject,
+	PVOID  ReportBuffer,
+	ULONG  ReportBufferLength
+)
+{
+	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("HidD_SetOutputReport");
+
+	const PUCHAR charInBuf = PUCHAR(ReportBuffer);
+	const std::vector<char> inBuffer(charInBuf, charInBuf + ReportBufferLength);
+
+	const auto ret = real_HidD_SetOutputReport(HidDeviceObject, ReportBuffer, ReportBufferLength);
+	const auto error = GetLastError();
+
+	//
+	// Only log if handle of interest
+	// 
+	if (g_handleToPath.find(HidDeviceObject) != g_handleToPath.end())
+	{
+		_logger->info("ret={}, lastError={} ({:04d}) -> {:Xpn}",
+			ret,
+			error,
+			ReportBufferLength,
+			spdlog::to_hex(inBuffer)
+		);
+	}
+
+	return ret;
+}
+
 
 BOOL APIENTRY DllMain(HMODULE hModule,
 	DWORD  ul_reason_for_call,
 	LPVOID lpReserved
 )
 {
+	UNREFERENCED_PARAMETER(lpReserved);
+
 	if (DetourIsHelperProcess())
 	{
 		return TRUE;
@@ -198,6 +275,8 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 		DetourAttach((void**)&real_CreateFileA, DetourCreateFileA);
 		DetourAttach((void**)&real_CreateFileW, DetourCreateFileW);
 		DetourAttach((void**)&real_CloseHandle, DetourCloseHandle);
+		DetourAttach((void**)&real_HidD_SetFeature, DetourHidD_SetFeature);
+		DetourAttach((void**)&real_HidD_SetOutputReport, DetourHidD_SetOutputReport);
 		DetourTransactionCommit();
 
 		break;
@@ -211,10 +290,11 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 		DetourDetach((void**)&real_CreateFileA, DetourCreateFileA);
 		DetourDetach((void**)&real_CreateFileW, DetourCreateFileW);
 		DetourDetach((void**)&real_CloseHandle, DetourCloseHandle);
+		DetourDetach((void**)&real_HidD_SetFeature, DetourHidD_SetFeature);
+		DetourDetach((void**)&real_HidD_SetOutputReport, DetourHidD_SetOutputReport);
 		DetourTransactionCommit();
 
 		break;
 	}
 	return TRUE;
 }
-
