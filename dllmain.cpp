@@ -162,7 +162,7 @@ BOOL WINAPI DetourCloseHandle(
 
 	if (it != g_handleToPath.end())
 	{
-		_logger->info("Closing tracked handle {}", it);
+		_logger->info("Closing tracked handle {}", g_handleToPath[hObject]);
 		g_handleToPath.erase(it);
 	}
 
