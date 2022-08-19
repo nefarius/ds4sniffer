@@ -10,3 +10,11 @@ DLL performing API-hooking to find which process is talking to the DS4.
 - Reboot the machine
 - Start DebugView++ **as Administrator**
 - Connect the DS4 and observe the debug outputs
+- Save the collected data with File / Save Log
+
+## To undo/uninstall
+
+- Execute `reset_appinit_dll.reg`
+- Reboot the machine
+- Delete `ds4sniffer.dll` from `C:\Windows\System32` and `C:\Windows\SysWOW64`
+- Done!
