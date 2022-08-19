@@ -6,7 +6,11 @@
 #include <locale>
 #include <map>
 
+//
+// Change this to filter other devices, currently matches Sony VID
+// 
 std::string g_match("054C_PID");
+
 using convert_t = std::codecvt_utf8<wchar_t>;
 std::wstring_convert<convert_t, wchar_t> strconverter;
 
@@ -33,7 +37,7 @@ HANDLE WINAPI DetourCreateFileA(
 	HANDLE hTemplateFile
 )
 {
-	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("CreateFileA");
+	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("ds4sniffer-CreateFileA");
 	std::string path(lpFileName);
 
 	std::transform(path.begin(), path.end(), path.begin(), ::toupper);
@@ -78,7 +82,7 @@ HANDLE WINAPI DetourCreateFileW(
 	HANDLE hTemplateFile
 )
 {
-	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("CreateFileW");
+	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("ds4sniffer-CreateFileW");
 	std::string path(strconverter.to_bytes(lpFileName));
 
 	std::transform(path.begin(), path.end(), path.begin(), ::toupper);
@@ -121,7 +125,7 @@ BOOL WINAPI DetourWriteFile(
 	LPOVERLAPPED lpOverlapped
 )
 {
-	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("WriteFile");
+	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("ds4sniffer-WriteFile");
 
 	const PUCHAR charInBuf = PUCHAR(lpBuffer);
 	const std::vector<char> inBuffer(charInBuf, charInBuf + nNumberOfBytesToWrite);
@@ -152,13 +156,13 @@ BOOL WINAPI DetourCloseHandle(
 	HANDLE hObject
 )
 {
-	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("CloseHandle");
+	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("ds4sniffer-CloseHandle");
 
 	const auto it = g_handleToPath.find(hObject);
 
 	if (it != g_handleToPath.end())
 	{
-		_logger->info("Closing tracked handle");
+		_logger->info("Closing tracked handle {}", it);
 		g_handleToPath.erase(it);
 	}
 
@@ -174,7 +178,7 @@ BOOLEAN DetourHidD_SetFeature(
 	ULONG  ReportBufferLength
 )
 {
-	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("HidD_SetFeature");
+	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("ds4sniffer-HidD_SetFeature");
 
 	const PUCHAR charInBuf = PUCHAR(ReportBuffer);
 	const std::vector<char> inBuffer(charInBuf, charInBuf + ReportBufferLength);
@@ -207,7 +211,7 @@ BOOLEAN DetourHidD_SetOutputReport(
 	ULONG  ReportBufferLength
 )
 {
-	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("HidD_SetOutputReport");
+	const std::shared_ptr<spdlog::logger> _logger = spdlog::get("ds4sniffer")->clone("ds4sniffer-HidD_SetOutputReport");
 
 	const PUCHAR charInBuf = PUCHAR(ReportBuffer);
 	const std::vector<char> inBuffer(charInBuf, charInBuf + ReportBufferLength);
