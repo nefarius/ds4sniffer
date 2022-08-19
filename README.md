@@ -2,6 +2,10 @@
 
 DLL performing API-hooking to find which process is talking to the DS4.
 
+## Motivation
+
+Created to aid in analysis [of this issue](https://github.com/libretro/retroarch-joypad-autoconfig/issues/852).
+
 ## How to use
 
 - Download [DebugViewPP](https://github.com/CobaltFusion/DebugViewPP/releases)
