@@ -6,7 +6,6 @@
   "supports": "!(arm | uwp)",
   "dependencies": [
     "spdlog",
-	"detours",
-	"boost-stacktrace"
+	"detours"
   ]
 }
